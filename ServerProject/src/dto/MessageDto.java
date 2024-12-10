@@ -4,7 +4,7 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
-// data class
+// DTO class
 public class MessageDto {
     private String nickname;
     private String message;

@@ -2,11 +2,8 @@ package connection;
 
 import data.ConnectionData;
 import dto.MessageDto;
-import dto.ReceivedMessageDto;
 import dto.SendingMessageDto;
 import dto.ServerMessageDto;
-import org.json.simple.JSONObject;
-import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 import service.ChattingService;
 
@@ -20,20 +17,26 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
 
+// 연결을 담당하는 컨트롤러
+// 네트워크 입출력을 전반적으로 담당함
 public class ConnectionController {
     private static ConnectionController controller;
 
     private ServerSocket serverSocket;
     private ChattingService chattingService = ChattingService.getInstance();
 
+    // 싱글턴 패턴으로 컨트롤러 객체는 하나로 선언
     public static ConnectionController getInstance() {
         if (controller == null) controller = new ConnectionController();
         return controller;
     }
 
     public ConnectionController() {
+        // TODO: Logger로 변환
         System.out.println("서버 시작");
         
+        // 서버 스레드 생성 후 서버 소켓을 통해 listen 수행
+        // 만약 서버 소켓으로부터 연결이 들어오면 accept 후 클라이언트 객체 생성
         Thread serverThread = new Thread(() -> {
             try {
                 serverSocket = new ServerSocket();
@@ -63,6 +66,7 @@ public class ConnectionController {
         serverThread.start();
     }
 
+    // TODO: ServerMain에 수동으로 종료할 때 사용
     public void stopServer() {
         try {
             chattingService.getClientList().keySet().stream()
@@ -80,11 +84,18 @@ public class ConnectionController {
         }
     }
 
-    public void createClient(Socket socket) {
+    // 
+    // parameter: Socket (클라이언트와 연결된 소켓)
+    // 소켓을 기반으로 클라이언트 객체를 생성
+    
+    private void createClient(Socket socket) {
         Client client = new Client(socket);
         startChatting(client);
     }
 
+    // parameter: Client
+    // 각 Client는 독립적 스레드로 동작
+    // Client의 socket을 이용하여 receive 부분과 send 부분을 구체화
     private void startChatting(Client client) {
         Thread clientThread = new Thread(() -> {
             try {
@@ -132,6 +143,8 @@ public class ConnectionController {
         clientThread.start();
     }
 
+    // parameter: MessageDto
+    // 현재 모든 Client들에게 메시지를 전송함
     private void sendAllMessage(MessageDto messageDto) {
         List<Client> errorClient = new ArrayList<>();
 
@@ -139,7 +152,7 @@ public class ConnectionController {
                 .map(key -> chattingService.getClientList().get(key))
                 .forEach(client -> {
                     try {
-                        sendMessage(client, messageDto);
+                        sendMessage(messageDto, client);
                     } catch (IOException e) {
                         errorClient.add(client);
                     }
@@ -157,15 +170,17 @@ public class ConnectionController {
                 });
     }
 
-    private void sendAllMessage(MessageDto messageDto, Client origin) {
+    // parameter: MessageDto, Client
+    // exludedOrigin을 재외한 모든 Client들에게 메시지를 전송함
+    private void sendAllMessage(MessageDto messageDto, Client excludedOrigin) {
         List<Client> errorClient = new ArrayList<>();
 
         chattingService.getClientList().keySet().stream()
-                .filter(key -> !key.equals(origin.getId()))
+                .filter(key -> !key.equals(excludedOrigin.getId()))
                 .map(key -> chattingService.getClientList().get(key))
                 .forEach(client -> {
                     try {
-                        sendMessage(client, messageDto);
+                        sendMessage(messageDto, client);
                     } catch (IOException e) {
                         errorClient.add(client);
                     }
@@ -183,7 +198,9 @@ public class ConnectionController {
                 });
     }
 
-    private void sendMessage(Client client, MessageDto messageDto) throws IOException {
+    // parameter: MessageDto, Client
+    // 단일 client에게 메시지를 전송함
+    private void sendMessage(MessageDto messageDto, Client client) throws IOException {
         PrintWriter writer = new PrintWriter(client.getSocket().getOutputStream());
         writer.println(messageDto.toJson().toString());
         writer.flush();
