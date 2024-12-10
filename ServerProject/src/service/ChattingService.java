@@ -32,6 +32,7 @@ public class ChattingService {
     public ServerMessageDto addClient(Client client) {
         client.setId(sequence.getAndAdd(1L));
         clientList.put(client.getId(), client);
+        System.out.println(client.getNickname() + "님이 입장했습니다.\n" + "채팅자 수: " + clientList.size());
         String message = client.getNickname() + "님이 입장했습니다.\n" + "채팅자 수: " + clientList.size();
         ServerMessageDto serverMessageDto = new ServerMessageDto(message);
 

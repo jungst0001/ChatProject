@@ -17,6 +17,8 @@ import java.io.PrintWriter;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ConnectionController {
     private static ConnectionController controller;
@@ -63,6 +65,15 @@ public class ConnectionController {
 
     public void stopServer() {
         try {
+            chattingService.getClientList().keySet().stream()
+                    .map(key -> chattingService.getClientList().get(key))
+                    .forEach(client -> {
+                        try {
+                            client.getSocket().close();
+                        } catch (IOException e) {
+
+                        }
+                    });
             serverSocket.close();
         } catch (IOException e) {
 
@@ -71,8 +82,6 @@ public class ConnectionController {
 
     public void createClient(Socket socket) {
         Client client = new Client(socket);
-
-        chattingService.addClient(client);
         startChatting(client);
     }
 
@@ -81,10 +90,14 @@ public class ConnectionController {
             try {
                 while (true) {
                     BufferedReader reader = new BufferedReader(new InputStreamReader(client.getSocket().getInputStream()));
-                    PrintWriter writer = new PrintWriter(client.getSocket().getOutputStream());
-
                     String data = reader.readLine();
 
+                    if (data == null) {
+                        System.out.println(client.getNickname() + "님이 나갔습니다");
+                        break;
+                    }
+
+                    System.out.println("data: " + data);
                     MessageDto receivedMessageDto = MessageDto.toDto(data);
 
                     if (client.getNickname() == null) {
@@ -95,12 +108,15 @@ public class ConnectionController {
                     }
 
                     MessageDto sendingMessageDto = SendingMessageDto.toDto(receivedMessageDto);
-                    sendAllMessage(sendingMessageDto);
+                    if (sendingMessageDto.getMessage().equals(ConnectionData.GREETING)) continue;
+                    sendAllMessage(sendingMessageDto, client);
                 }
             } catch (IOException e) {
 
             } catch (ParseException e) {
 
+            } catch (NullPointerException e) {
+                System.out.println(client.getNickname() + "님의 메시지를 읽는 중 문제가 발생했습니다.");
             } finally {
                 try {
                     ServerMessageDto serverMessageDto = chattingService.removeClient(client);
@@ -117,28 +133,59 @@ public class ConnectionController {
     }
 
     private void sendAllMessage(MessageDto messageDto) {
+        List<Client> errorClient = new ArrayList<>();
+
         chattingService.getClientList().keySet().stream()
                 .map(key -> chattingService.getClientList().get(key))
-                .forEach(client1 -> {
-                    sendMessage(client1, messageDto);
+                .forEach(client -> {
+                    try {
+                        sendMessage(client, messageDto);
+                    } catch (IOException e) {
+                        errorClient.add(client);
+                    }
+                });
+
+        errorClient.stream()
+                .forEach(client -> {
+                    try {
+                        ServerMessageDto serverMessageDto = chattingService.removeClient(client);
+                        client.getSocket().close();
+                        sendAllMessage(serverMessageDto);
+                    } catch (IOException e) {
+
+                    }
                 });
     }
 
-    private void sendMessage(Client client, MessageDto messageDto) throws RuntimeException {
-        try {
-            PrintWriter writer = new PrintWriter(client.getSocket().getOutputStream());
-            writer.println(messageDto.toJson().toString());
-            writer.flush();
-        } catch (IOException e) {
+    private void sendAllMessage(MessageDto messageDto, Client origin) {
+        List<Client> errorClient = new ArrayList<>();
 
-        } finally {
-            try {
-                ServerMessageDto serverMessageDto = chattingService.removeClient(client);
-                client.getSocket().close();
-                sendAllMessage(serverMessageDto);
-            } catch (IOException e) {
+        chattingService.getClientList().keySet().stream()
+                .filter(key -> !key.equals(origin.getId()))
+                .map(key -> chattingService.getClientList().get(key))
+                .forEach(client -> {
+                    try {
+                        sendMessage(client, messageDto);
+                    } catch (IOException e) {
+                        errorClient.add(client);
+                    }
+                });
 
-            }
-        }
+        errorClient.stream()
+                .forEach(client -> {
+                    try {
+                        ServerMessageDto serverMessageDto = chattingService.removeClient(client);
+                        client.getSocket().close();
+                        sendAllMessage(serverMessageDto, client);
+                    } catch (IOException e) {
+
+                    }
+                });
+    }
+
+    private void sendMessage(Client client, MessageDto messageDto) throws IOException {
+        PrintWriter writer = new PrintWriter(client.getSocket().getOutputStream());
+        writer.println(messageDto.toJson().toString());
+        writer.flush();
     }
 }
